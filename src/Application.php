@@ -27,6 +27,20 @@ use Cake\Http\MiddlewareQueue;
 use Cake\ORM\Locator\TableLocator;
 use Cake\Routing\Middleware\AssetMiddleware;
 use Cake\Routing\Middleware\RoutingMiddleware;
+// In src/Application.php add the following imports
+use Authentication\AuthenticationService;
+use Authentication\AuthenticationServiceInterface;
+use Authentication\AuthenticationServiceProviderInterface;
+use Authentication\Middleware\AuthenticationMiddleware;
+use Cake\Routing\Router;
+use Psr\Http\Message\ServerRequestInterface;
+
+use Authorization\AuthorizationService;
+use Authorization\AuthorizationServiceInterface;
+use Authorization\AuthorizationServiceProviderInterface;
+use Authorization\Middleware\AuthorizationMiddleware;
+use Authorization\Policy\OrmResolver;
+
 
 /**
  * Application setup class.
@@ -35,6 +49,8 @@ use Cake\Routing\Middleware\RoutingMiddleware;
  * want to use in your application.
  */
 class Application extends BaseApplication
+    implements AuthenticationServiceProviderInterface,
+    AuthorizationServiceProviderInterface
 {
     /**
      * Load all the application configuration and bootstrap logic.
@@ -64,6 +80,9 @@ class Application extends BaseApplication
         }
 
         // Load more plugins here
+        $this->addPlugin('Authentication');
+        $this->addPlugin('Authorization');
+
     }
 
     /**
@@ -99,7 +118,10 @@ class Application extends BaseApplication
             // https://book.cakephp.org/4/en/security/csrf.html#cross-site-request-forgery-csrf-middleware
             ->add(new CsrfProtectionMiddleware([
                 'httponly' => true,
-            ]));
+            ]))
+
+            ->add(new AuthenticationMiddleware($this))
+            ->add(new AuthorizationMiddleware($this));
 
         return $middlewareQueue;
     }
@@ -129,5 +151,39 @@ class Application extends BaseApplication
         $this->addPlugin('Migrations');
 
         // Load more plugins here
+    }
+    public function getAuthenticationService(ServerRequestInterface $request): AuthenticationServiceInterface
+{
+    $authenticationService = new AuthenticationService([
+        'unauthenticatedRedirect' => Router::url('/users/login'),
+        'queryParam' => 'redirect',
+    ]);
+
+    // Load identifiers, ensure we check email and password fields
+    $authenticationService->loadIdentifier('Authentication.Password', [
+        'fields' => [
+            'username' => 'email',
+            'password' => 'senha',
+        ]
+    ]);
+
+    // Load the authenticators, you want session first
+    $authenticationService->loadAuthenticator('Authentication.Session');
+    // Configure form data check to pick email and password
+    $authenticationService->loadAuthenticator('Authentication.Form', [
+        'fields' => [
+            'username' => 'email',
+            'password' => 'senha',
+        ],
+        'loginUrl' => Router::url('/users/login'),
+    ]);
+
+    return $authenticationService;
+}
+    public function getAuthorizationService(ServerRequestInterface $request): AuthorizationServiceInterface
+    {
+        $resolver = new OrmResolver();
+
+        return new AuthorizationService($resolver);
     }
 }

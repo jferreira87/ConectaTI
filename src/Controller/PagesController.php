@@ -45,29 +45,53 @@ class PagesController extends AppController
      */
     public function display(string ...$path): ?Response
     {
-        if (!$path) {
-            return $this->redirect('/');
-        }
-        if (in_array('..', $path, true) || in_array('.', $path, true)) {
-            throw new ForbiddenException();
-        }
-        $page = $subpage = null;
+    $this->Authorization->skipAuthorization();
 
-        if (!empty($path[0])) {
-            $page = $path[0];
-        }
-        if (!empty($path[1])) {
-            $subpage = $path[1];
-        }
-        $this->set(compact('page', 'subpage'));
+    if (in_array('..', $path, true) || in_array('.', $path, true)) {
+        throw new ForbiddenException();
+    }
 
-        try {
-            return $this->render(implode('/', $path));
-        } catch (MissingTemplateException $exception) {
-            if (Configure::read('debug')) {
-                throw $exception;
-            }
-            throw new NotFoundException();
+    $page = $subpage = null;
+
+    if (!empty($path[0])) {
+        $page = $path[0];
+    }
+    if (!empty($path[1])) {
+        $subpage = $path[1];
+    }
+
+    if (!$page) {
+        $page = 'home'; // se não passar nada, abre o dashboard
+    }
+
+    // se for a página home, carrega dados do dashboard
+    if ($page === 'home') {
+        $this->loadModel('Cadastros');
+        $this->loadModel('Chamados');
+
+        $totalCadastros = $this->Cadastros->find()->count();
+        $aguardando = $this->Chamados->find()->where(['status' => 'aguardando'])->count();
+        $andamento = $this->Chamados->find()->where(['status' => 'andamento'])->count();
+
+        $chamadosAbertos = $this->Chamados->find()
+            ->contain(['Cadastros', 'Users'])
+            ->where(['status IN' => ['aguardando', 'andamento']])
+            ->order(['abertura' => 'DESC'])
+            ->limit(10);
+
+        $this->set(compact('totalCadastros', 'aguardando', 'andamento', 'chamadosAbertos'));
+    }
+
+    $this->set(compact('page', 'subpage'));
+
+    try {
+        return $this->render($page);
+    } catch (MissingTemplateException $exception) {
+        if (Configure::read('debug')) {
+            throw $exception;
         }
+        throw new NotFoundException();
     }
 }
+}
+
